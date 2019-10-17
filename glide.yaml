@@ -1,0 +1,22 @@
+package: github.com/openshift/aro-admission-controller
+excludeDirs:
+  - openshift.local.config
+  - openshift.local.etcd
+  - openshift.local.volumes
+  - openshift.local.clusterup
+import:
+  #kubernetes first
+  - package: k8s.io/kubernetes
+    repo: https://github.com/openshift/kubernetes.git
+    version: origin-3.11-kubernetes-1.11.1
+  - package: k8s.io/api
+    repo: https://github.com/openshift/kubernetes-api.git
+    version: origin-3.11-kubernetes-1.11.1
+  - package: k8s.io/apimachinery
+    repo: https://github.com/openshift/kubernetes-apimachinery.git
+    version: origin-3.11-kubernetes-1.11.1
+  #openshift packages after kubernetes
+  - package: github.com/openshift/api
+    version: release-3.11
+  - package: github.com/openshift/origin
+    version: release-3.11
