@@ -21,6 +21,7 @@ import (
 	//"k8s.io/kubernetes/pkg/apis/batch"
 	//"k8s.io/kubernetes/pkg/apis/core"
 
+	authorizationv1 "github.com/openshift/client-go/authorization/clientset/versioned/typed/authorization/v1"
 	securityv1 "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 )
@@ -131,7 +132,9 @@ func (ac *admissionController) run() error {
 	mux.HandleFunc("/statefulsets", ac.handleStatefulSet)
 	mux.HandleFunc("/jobs", ac.handleJob)
 	mux.HandleFunc("/cronjobs", ac.handleCronJob)
-	mux.HandleFunc("/deploymentconfigs", ac.handleCronJob)
+	mux.HandleFunc("/deploymentconfigs", ac.handleDeploymentConfig)
+	// TODO
+	//mux.HandleFunc("/deployments", ac.handleDeployment)
 	mux.HandleFunc("/healthz", ac.handleHealthz)
 	mux.HandleFunc("/healthz/ready", ac.handleHealthz)
 
@@ -199,13 +202,18 @@ func run() error {
 		return err
 	}
 
+	authclient, err := authorizationv1.NewForConfig(restconfig)
+	if err != nil {
+		return err
+	}
+
 	ac := &admissionController{
 		client:            client,
 		restricted:        restricted,
 		whitelistedImages: whitelistedImages,
 	}
 
-	go setupAdmissionController(client, secclient)
+	go setupAdmissionController(client, secclient, authclient)
 	return ac.run()
 }
 
