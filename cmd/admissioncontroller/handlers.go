@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/davecgh/go-spew/spew"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -38,6 +37,7 @@ func podSpecIsWhitelisted(spec *core.PodSpec, whitelistedImages []*regexp.Regexp
 	containers = append(containers, spec.InitContainers...)
 
 	for _, c := range containers {
+		log.Printf("Image %s", c.Image)
 		if !imageIsWhitelisted(c.Image, whitelistedImages) {
 			return false
 		}
@@ -61,7 +61,7 @@ func (ac *admissionController) validatePodAgainstSCC(pod *core.Pod, namespace st
 }
 
 func getAdmissionReviewRequest(r *http.Request) (req *admissionv1beta1.AdmissionRequest, errorcode int) {
-	log.Printf("New review request")
+	log.Printf("New review request %s", r.RequestURI)
 	if r.Method != http.MethodPost {
 		return nil, http.StatusMethodNotAllowed
 	}
@@ -103,7 +103,6 @@ func (ac *admissionController) handlePod(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	pod := o.(*core.Pod)
-	spew.Dump(pod)
 	ac.checkPodSpec(pod, pod.Namespace, w, req.UID)
 }
 
@@ -278,6 +277,8 @@ func (ac *admissionController) handleDeploymentConfig(w http.ResponseWriter, r *
 		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
 		return
 	}
+	log.Printf("K %s %s %s", req.Kind.Group, req.Kind.Version, req.Kind.Kind)
+	log.Printf("R %s %s %s", req.Resource.Group, req.Resource.Version, req.Resource.Resource)
 	if req.UID == "" ||
 		req.Kind.Group != "apps" || req.Kind.Version != "v1" || req.Kind.Kind != "DeploymentConfig" ||
 		req.Resource.Group != "apps" || req.Resource.Version != "v1" || req.Resource.Resource != "deploymentconfigs" ||
@@ -344,7 +345,6 @@ func (ac *admissionController) handleDeployment(w http.ResponseWriter, r *http.R
 // interface{} is used to allow core.Pod from both the Openshift and Kubernetes APIs
 func (ac *admissionController) checkPodSpec(podi interface{}, namespace string, w http.ResponseWriter, uid types.UID) {
 	pod := podi.(*core.Pod)
-	spew.Dump(pod)
 	errs, err := ac.validatePodAgainstSCC(pod, namespace)
 	if err != nil {
 		log.Printf("Validation error: %s", err)
@@ -376,4 +376,8 @@ func (ac *admissionController) checkPodSpec(podi interface{}, namespace string, 
 	log.Printf("Review complete")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rev)
+}
+
+func (ac *admissionController) handleSCC(w http.ResponseWriter, r *http.Request) {
+	//TODO
 }

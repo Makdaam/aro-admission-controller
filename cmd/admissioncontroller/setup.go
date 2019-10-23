@@ -20,7 +20,7 @@ func toStringPtr(s string) *string {
 
 func initializeValidatingWebhookConfiguration() *admissionregistration.ValidatingWebhookConfiguration {
 	hookconfig := []struct {
-		ServicePath string
+		ServicePath *string
 		Name        string
 		Operations  []admissionregistration.OperationType
 		APIGroups   []string
@@ -28,7 +28,7 @@ func initializeValidatingWebhookConfiguration() *admissionregistration.Validatin
 		Resources   []string
 	}{
 		{
-			ServicePath: "/pods",
+			ServicePath: toStringPtr("/pods"),
 			Name:        "pods.aro-admission-controller.redhat.com",
 			Operations:  []admissionregistration.OperationType{"CREATE", "UPDATE"},
 			APIGroups:   []string{""},
@@ -36,7 +36,7 @@ func initializeValidatingWebhookConfiguration() *admissionregistration.Validatin
 			Resources:   []string{"pods"},
 		},
 		{
-			ServicePath: "/daemonsets",
+			ServicePath: toStringPtr("/daemonsets"),
 			Name:        "daemonsets.aro-admission-controller.redhat.com",
 			Operations:  []admissionregistration.OperationType{"CREATE", "UPDATE"},
 			APIGroups:   []string{"apps"},
@@ -44,7 +44,7 @@ func initializeValidatingWebhookConfiguration() *admissionregistration.Validatin
 			Resources:   []string{"daemonsets"},
 		},
 		{
-			ServicePath: "/replicasets",
+			ServicePath: toStringPtr("/replicasets"),
 			Name:        "replicasets.aro-admission-controller.redhat.com",
 			Operations:  []admissionregistration.OperationType{"CREATE", "UPDATE"},
 			APIGroups:   []string{"apps"},
@@ -52,7 +52,7 @@ func initializeValidatingWebhookConfiguration() *admissionregistration.Validatin
 			Resources:   []string{"replicasets"},
 		},
 		{
-			ServicePath: "/statefulsets",
+			ServicePath: toStringPtr("/statefulsets"),
 			Name:        "statefulsets.aro-admission-controller.redhat.com",
 			Operations:  []admissionregistration.OperationType{"CREATE", "UPDATE"},
 			APIGroups:   []string{"apps"},
@@ -60,7 +60,7 @@ func initializeValidatingWebhookConfiguration() *admissionregistration.Validatin
 			Resources:   []string{"statefulsets"},
 		},
 		{
-			ServicePath: "/jobs",
+			ServicePath: toStringPtr("/jobs"),
 			Name:        "jobs.aro-admission-controller.redhat.com",
 			Operations:  []admissionregistration.OperationType{"CREATE", "UPDATE"},
 			APIGroups:   []string{"batch"},
@@ -68,7 +68,7 @@ func initializeValidatingWebhookConfiguration() *admissionregistration.Validatin
 			Resources:   []string{"jobs"},
 		},
 		{
-			ServicePath: "/cronjobs",
+			ServicePath: toStringPtr("/cronjobs"),
 			Name:        "cronjobs.aro-admission-controller.redhat.com",
 			Operations:  []admissionregistration.OperationType{"CREATE", "UPDATE"},
 			APIGroups:   []string{"batch"},
@@ -76,7 +76,7 @@ func initializeValidatingWebhookConfiguration() *admissionregistration.Validatin
 			Resources:   []string{"cronjobs"},
 		},
 		{
-			ServicePath: "/deploymentconfigs",
+			ServicePath: toStringPtr("/deploymentconfigs"),
 			Name:        "deploymentconfigs.aro-admission-controller.redhat.com",
 			Operations:  []admissionregistration.OperationType{"CREATE", "UPDATE"},
 			APIGroups:   []string{"apps"},
@@ -105,7 +105,7 @@ func initializeValidatingWebhookConfiguration() *admissionregistration.Validatin
 			Service: &admissionregistration.ServiceReference{
 				Name:      "aro-admission-controller",
 				Namespace: "kube-system",
-				Path:      &h.ServicePath,
+				Path:      h.ServicePath,
 			},
 		},
 			FailurePolicy: &failurePolicy,
@@ -174,6 +174,19 @@ func setupAdmissionController(client internalclientset.Interface, secclient *sec
 				log.Printf("Setup: Found 3 aro-admission-controller pods in Ready state, setup continues")
 				break
 			}
+		}
+	}
+	//wait for aro-admission-controller service
+	log.Printf("Setup: Waiting for aro-admission-controller service")
+	for {
+		time.Sleep(2)
+		services, err := client.Core().Services("kube-system").List(opts)
+		if err != nil {
+			log.Fatalf("Setup: Error while listing services %s", err)
+		}
+		if len(services.Items) == 1 {
+			log.Printf("Setup: Found aro-admission-controller service")
+			break
 		}
 	}
 	//add validation webhook config

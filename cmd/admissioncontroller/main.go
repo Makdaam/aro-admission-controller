@@ -135,6 +135,8 @@ func (ac *admissionController) run() error {
 	mux.HandleFunc("/deploymentconfigs", ac.handleDeploymentConfig)
 	// TODO
 	//mux.HandleFunc("/deployments", ac.handleDeployment)
+	mux.HandleFunc("/sccs", ac.handleSCC)
+
 	mux.HandleFunc("/healthz", ac.handleHealthz)
 	mux.HandleFunc("/healthz/ready", ac.handleHealthz)
 
