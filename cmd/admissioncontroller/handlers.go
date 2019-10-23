@@ -71,10 +71,10 @@ func getAdmissionReviewRequest(r *http.Request) (req *admissionv1beta1.Admission
 	}
 	var reviewIncoming *admissionv1beta1.AdmissionReview
 	err := json.NewDecoder(r.Body).Decode(&reviewIncoming)
-	req = reviewIncoming.Request
 	if err != nil {
 		return nil, http.StatusBadRequest
 	}
+	req = reviewIncoming.Request
 	return req, 0
 }
 
@@ -375,7 +375,10 @@ func (ac *admissionController) checkPodSpec(podi interface{}, namespace string, 
 	}
 	log.Printf("Review complete")
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(rev)
+	err = json.NewEncoder(w).Encode(rev)
+	if err != nil {
+		log.Fatalf("Error encoding json: %s", err)
+	}
 }
 
 func (ac *admissionController) handleSCC(w http.ResponseWriter, r *http.Request) {
