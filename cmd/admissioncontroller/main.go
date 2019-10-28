@@ -21,8 +21,6 @@ import (
 	//"k8s.io/kubernetes/pkg/apis/batch"
 	//"k8s.io/kubernetes/pkg/apis/core"
 
-	authorizationv1 "github.com/openshift/client-go/authorization/clientset/versioned/typed/authorization/v1"
-	securityv1 "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 )
 
@@ -122,9 +120,11 @@ type admissionController struct {
 	client            internalclientset.Interface
 	restricted        *security.SecurityContextConstraints
 	whitelistedImages []*regexp.Regexp
+	protectedSCCs     map[string]security.SecurityContextConstraints
 }
 
 func (ac *admissionController) run() error {
+	ac.protectedSCCs = ac.InitProtectedSCCs()
 	mux := &http.ServeMux{}
 	mux.HandleFunc("/pods", ac.handlePod)
 	mux.HandleFunc("/daemonsets", ac.handleDaemonSet)
@@ -199,23 +199,12 @@ func run() error {
 		return err
 	}
 
-	secclient, err := securityv1.NewForConfig(restconfig)
-	if err != nil {
-		return err
-	}
-
-	authclient, err := authorizationv1.NewForConfig(restconfig)
-	if err != nil {
-		return err
-	}
-
 	ac := &admissionController{
 		client:            client,
 		restricted:        restricted,
 		whitelistedImages: whitelistedImages,
 	}
 
-	go setupAdmissionController(client, secclient, authclient)
 	return ac.run()
 }
 

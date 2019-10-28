@@ -5,22 +5,104 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"reflect"
 	"regexp"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/kubernetes/pkg/apis/apps"
 	"k8s.io/kubernetes/pkg/apis/batch"
 	"k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 
-	appsv1 "github.com/openshift/api/apps/v1"
+	_ "github.com/openshift/origin/pkg/api/install"
+	oapps "github.com/openshift/origin/pkg/apps/apis/apps"
+	"github.com/openshift/origin/pkg/security/apis/security"
 	"github.com/openshift/origin/pkg/security/apiserver/securitycontextconstraints"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// verifySCC makes sure that nothing besides additional users or groups are
+// different between and SCC and an SCCTemplate.
+func verifySCC(scc security.SecurityContextConstraints, sccTemplate security.SecurityContextConstraints) errors.Aggregate {
+	var errs []error
+	// TODO compare ObjectMeta
+
+	//Allow only if the new Groups are a superset of the template Groups
+	for _, templateGroup := range sccTemplate.Groups {
+		found := false
+		for _, sccGroup := range scc.Groups {
+			if templateGroup == sccGroup {
+				found = true
+				break
+			}
+		}
+		if !found {
+			errs = append(errs, fmt.Errorf("Removal of Group %s from SCC is not allowed", templateGroup))
+			break
+		}
+	}
+	//Allow only if the new Users are a superset of the template Groups
+	for _, templateUser := range sccTemplate.Users {
+		found := false
+		for _, sccUser := range scc.Users {
+			if templateUser == sccUser {
+				found = true
+				break
+			}
+		}
+		if !found {
+			errs = append(errs, fmt.Errorf("Removal of User %s from SCC is not allowed", templateUser))
+			break
+		}
+	}
+	//ignore Users and Groups in further comparison
+	localSccTemplate := sccTemplate.DeepCopy()
+	localSccTemplate.Users = []string{}
+	localSccTemplate.Groups = []string{}
+	//added only to remove function side effects
+	localScc := scc.DeepCopy()
+	//ignore ObjectMeta
+	localSccTemplate.ObjectMeta = metav1.ObjectMeta{}
+	localSccTemplate.Users = []string{}
+	localSccTemplate.Groups = []string{}
+
+	if !reflect.DeepEqual(localScc, localSccTemplate) {
+		errs = append(errs, fmt.Errorf("Modification of fields other than Users and Groups in the SCC is not allowed"))
+	}
+	return errors.NewAggregate(errs)
+}
+
+func (ac *admissionController) handleSCC(w http.ResponseWriter, r *http.Request) {
+	req, errcode := getAdmissionReviewRequest(r)
+	if errcode != 0 {
+		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
+		return
+	}
+	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
+	if err != nil {
+		log.Printf("Decode error:  %s", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	scc := o.(*security.SecurityContextConstraints)
+	sccTemplate, protected := ac.protectedSCCs[scc.Name]
+	if protected {
+		//SCC in the set of protected SCCs
+		//only allow additional users and groups
+		errs := verifySCC(*scc, sccTemplate)
+		sendResult(errs, w, req.UID)
+	} else {
+		//SCC not in the set of protected SCCs
+		//allow operation
+		sendResult(nil, w, req.UID)
+	}
+}
 
 func imageIsWhitelisted(image string, whitelistedImages []*regexp.Regexp) bool {
 	for _, rx := range whitelistedImages {
@@ -33,6 +115,17 @@ func imageIsWhitelisted(image string, whitelistedImages []*regexp.Regexp) bool {
 
 // podIsWhitelisted returns true if all images of all containers are whitelisted
 func podSpecIsWhitelisted(spec *core.PodSpec, whitelistedImages []*regexp.Regexp) bool {
+	if spec.NodeSelector != nil {
+		log.Printf("NodeSelector not nil: %v", spec.NodeSelector)
+		if spec.NodeSelector["node-role.kubernetes.io/master"] == "true" || spec.NodeSelector["node-role.kubernetes.io/infra"] == "true" {
+			return true
+		}
+	}
+	//nodeSelector is not sent in the static Pod review request, but the Node is available
+	if strings.HasPrefix(spec.NodeName, "master-") || strings.HasPrefix(spec.NodeName, "infra-") {
+		//if it's a pod assigned to a master or infra node it should be able to run
+		return true
+	}
 	containers := append([]core.Container{}, spec.Containers...)
 	containers = append(containers, spec.InitContainers...)
 
@@ -92,18 +185,15 @@ func (ac *admissionController) handlePod(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var podschema schema.GroupVersionKind
-	podschema.Group = ""
-	podschema.Version = "v1"
-	podschema.Kind = "Pod"
-	o, _, err := codec.Decode(req.Object.Raw, &podschema, nil)
+	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
 	if err != nil {
 		log.Printf("Decode error:  %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	pod := o.(*core.Pod)
-	ac.checkPodSpec(pod, pod.Namespace, w, req.UID)
+	ac.checkPodSpec(pod.Spec, pod.ObjectMeta, pod.Namespace, w, req.UID)
 }
 
 func (ac *admissionController) handleDaemonSet(w http.ResponseWriter, r *http.Request) {
@@ -121,22 +211,15 @@ func (ac *admissionController) handleDaemonSet(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	var podschema schema.GroupVersionKind
-	podschema.Group = "apps"
-	podschema.Version = "v1"
-	podschema.Kind = "DaemonSet"
-	o, _, err := codec.Decode(req.Object.Raw, &podschema, nil)
+	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
 	if err != nil {
 		log.Printf("Decode error:  %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	ds := o.(*extensions.DaemonSet)
-
-	pod := new(core.Pod)
-	ds.Spec.Template.Spec.DeepCopyInto(&pod.Spec)
-	ds.Spec.Template.ObjectMeta.DeepCopyInto(&pod.ObjectMeta)
-	ac.checkPodSpec(pod, ds.Namespace, w, req.UID)
+	ac.checkPodSpec(ds.Spec.Template.Spec, ds.Spec.Template.ObjectMeta, ds.Namespace, w, req.UID)
 }
 
 func (ac *admissionController) handleReplicaSet(w http.ResponseWriter, r *http.Request) {
@@ -154,22 +237,15 @@ func (ac *admissionController) handleReplicaSet(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var podschema schema.GroupVersionKind
-	podschema.Group = "apps"
-	podschema.Version = "v1"
-	podschema.Kind = "ReplicaSet"
-	o, _, err := codec.Decode(req.Object.Raw, &podschema, nil)
+	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
 	if err != nil {
 		log.Printf("Decode error:  %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ds := o.(*extensions.ReplicaSet)
-
-	pod := new(core.Pod)
-	ds.Spec.Template.Spec.DeepCopyInto(&pod.Spec)
-	ds.Spec.Template.ObjectMeta.DeepCopyInto(&pod.ObjectMeta)
-	ac.checkPodSpec(pod, ds.Namespace, w, req.UID)
+	rs := o.(*extensions.ReplicaSet)
+	ac.checkPodSpec(rs.Spec.Template.Spec, rs.Spec.Template.ObjectMeta, rs.Namespace, w, req.UID)
 }
 
 func (ac *admissionController) handleStatefulSet(w http.ResponseWriter, r *http.Request) {
@@ -187,22 +263,15 @@ func (ac *admissionController) handleStatefulSet(w http.ResponseWriter, r *http.
 		return
 	}
 
-	var podschema schema.GroupVersionKind
-	podschema.Group = "apps"
-	podschema.Version = "v1"
-	podschema.Kind = "StatefulSet"
-	o, _, err := codec.Decode(req.Object.Raw, &podschema, nil)
+	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
 	if err != nil {
 		log.Printf("Decode error:  %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ds := o.(*apps.StatefulSet)
-
-	pod := new(core.Pod)
-	ds.Spec.Template.Spec.DeepCopyInto(&pod.Spec)
-	ds.Spec.Template.ObjectMeta.DeepCopyInto(&pod.ObjectMeta)
-	ac.checkPodSpec(pod, ds.Namespace, w, req.UID)
+	ss := o.(*apps.StatefulSet)
+	ac.checkPodSpec(ss.Spec.Template.Spec, ss.Spec.Template.ObjectMeta, ss.Namespace, w, req.UID)
 }
 
 func (ac *admissionController) handleJob(w http.ResponseWriter, r *http.Request) {
@@ -220,22 +289,15 @@ func (ac *admissionController) handleJob(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var podschema schema.GroupVersionKind
-	podschema.Group = "batch"
-	podschema.Version = "v1"
-	podschema.Kind = "Job"
-	o, _, err := codec.Decode(req.Object.Raw, &podschema, nil)
+	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
 	if err != nil {
 		log.Printf("Decode error:  %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ds := o.(*batch.Job)
-
-	pod := new(core.Pod)
-	ds.Spec.Template.Spec.DeepCopyInto(&pod.Spec)
-	ds.Spec.Template.ObjectMeta.DeepCopyInto(&pod.ObjectMeta)
-	ac.checkPodSpec(pod, ds.Namespace, w, req.UID)
+	job := o.(*batch.Job)
+	ac.checkPodSpec(job.Spec.Template.Spec, job.Spec.Template.ObjectMeta, job.Namespace, w, req.UID)
 }
 
 func (ac *admissionController) handleCronJob(w http.ResponseWriter, r *http.Request) {
@@ -253,22 +315,15 @@ func (ac *admissionController) handleCronJob(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var podschema schema.GroupVersionKind
-	podschema.Group = "batch"
-	podschema.Version = "v1beta1"
-	podschema.Kind = "CronJob"
-	o, _, err := codec.Decode(req.Object.Raw, &podschema, nil)
+	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
 	if err != nil {
 		log.Printf("Decode error:  %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ds := o.(*batch.CronJob)
-
-	pod := new(core.Pod)
-	ds.Spec.JobTemplate.Spec.Template.Spec.DeepCopyInto(&pod.Spec)
-	ds.Spec.JobTemplate.Spec.Template.ObjectMeta.DeepCopyInto(&pod.ObjectMeta)
-	ac.checkPodSpec(pod, ds.Namespace, w, req.UID)
+	cj := o.(*batch.CronJob)
+	ac.checkPodSpec(cj.Spec.JobTemplate.Spec.Template.Spec, cj.Spec.JobTemplate.Spec.Template.ObjectMeta, cj.Namespace, w, req.UID)
 }
 
 func (ac *admissionController) handleDeploymentConfig(w http.ResponseWriter, r *http.Request) {
@@ -287,79 +342,47 @@ func (ac *admissionController) handleDeploymentConfig(w http.ResponseWriter, r *
 		log.Printf("Field mismatch")
 		return
 	}
-
-	var podschema schema.GroupVersionKind
-	podschema.Group = "apps"
-	podschema.Version = "v1"
-	podschema.Kind = "DeploymentConfig"
-	o, _, err := codec.Decode(req.Object.Raw, &podschema, nil)
+	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
 	if err != nil {
 		log.Printf("Decode error %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	ds := o.(*appsv1.DeploymentConfig)
-
-	pod := new(corev1.Pod)
-	ds.Spec.Template.Spec.DeepCopyInto(&pod.Spec)
-	ds.Spec.Template.ObjectMeta.DeepCopyInto(&pod.ObjectMeta)
-	ac.checkPodSpec(pod, ds.Namespace, w, req.UID)
+	dc := o.(*oapps.DeploymentConfig)
+	ac.checkPodSpec(dc.Spec.Template.Spec, dc.Spec.Template.ObjectMeta, dc.Namespace, w, req.UID)
 }
 
 func (ac *admissionController) handleDeployment(w http.ResponseWriter, r *http.Request) {
 	//TODO finish and test
-	req, errcode := getAdmissionReviewRequest(r)
-	if errcode != 0 {
-		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
-		return
-	}
-	if req.UID == "" ||
-		req.Kind.Group != "apps" || req.Kind.Version != "v1" || req.Kind.Kind != "Deployment" ||
-		req.Resource.Group != "apps" || req.Resource.Version != "v1" || req.Resource.Resource != "deployments" ||
-		req.SubResource != "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		log.Printf("Field mismatch")
-		return
-	}
 
-	var podschema schema.GroupVersionKind
-	podschema.Group = "apps"
-	podschema.Version = "v1"
-	podschema.Kind = "Deployment"
-	o, _, err := codec.Decode(req.Object.Raw, &podschema, nil)
-	if err != nil {
-		log.Printf("Decode error:  %s", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	//TODO correct this
-	ds := o.(*appsv1.DeploymentConfig)
-
-	pod := new(corev1.Pod)
-	ds.Spec.Template.Spec.DeepCopyInto(&pod.Spec)
-	ds.Spec.Template.ObjectMeta.DeepCopyInto(&pod.ObjectMeta)
-	ac.checkPodSpec(pod, ds.Namespace, w, req.UID)
 }
 
 //checkPodSpec checks if the Pod spec is either whitelisted or will match the restricted scc, then prepares an HTTP response
 // interface{} is used to allow core.Pod from both the Openshift and Kubernetes APIs
-func (ac *admissionController) checkPodSpec(podi interface{}, namespace string, w http.ResponseWriter, uid types.UID) {
-	pod := podi.(*core.Pod)
+func (ac *admissionController) checkPodSpec(podSpec core.PodSpec, oMeta metav1.ObjectMeta, namespace string, w http.ResponseWriter, uid types.UID) {
+	pod := new(core.Pod)
+	podSpec.DeepCopyInto(&pod.Spec)
+	oMeta.DeepCopyInto(&pod.ObjectMeta)
 	errs, err := ac.validatePodAgainstSCC(pod, namespace)
 	if err != nil {
 		log.Printf("Validation error: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("Review complete")
+	sendResult(errs.ToAggregate(), w, uid)
+}
 
+func sendResult(errs errors.Aggregate, w http.ResponseWriter, uid types.UID) {
 	result := &metav1.Status{
 		Status: metav1.StatusSuccess,
 	}
-	if len(errs) > 0 {
-		log.Printf("Found %d errs when validating", len(errs))
+	if errs != nil && len(errs.Errors()) > 0 {
+		log.Printf("Found %d errs when validating", len(errs.Errors()))
 		result = &metav1.Status{
 			Status:  metav1.StatusFailure,
-			Message: errs.ToAggregate().Error(),
+			Message: errs.Error(),
 		}
 	}
 	rev := &admissionv1beta1.AdmissionReview{
@@ -373,14 +396,9 @@ func (ac *admissionController) checkPodSpec(podi interface{}, namespace string, 
 			Result:  result,
 		},
 	}
-	log.Printf("Review complete")
 	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(rev)
+	err := json.NewEncoder(w).Encode(rev)
 	if err != nil {
 		log.Fatalf("Error encoding json: %s", err)
 	}
-}
-
-func (ac *admissionController) handleSCC(w http.ResponseWriter, r *http.Request) {
-	//TODO
 }
