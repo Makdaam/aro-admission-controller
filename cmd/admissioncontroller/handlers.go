@@ -30,7 +30,11 @@ import (
 // different between and SCC and an SCCTemplate.
 func verifySCC(scc security.SecurityContextConstraints, sccTemplate security.SecurityContextConstraints) errors.Aggregate {
 	var errs []error
-	// TODO compare ObjectMeta
+	//checking ObjectMeta
+	labels := scc.ObjectMeta.GetLabels()
+	if labels["azure.openshift.io/owned-by-sync-pod"] != "true" {
+		errs = append(errs, fmt.Errorf("Protected SCC has to have the \"azure.openshift.io/owned-by-sync-pod\" label set to true"))
+	}
 
 	//Allow only if the new Groups are a superset of the template Groups
 	for _, templateGroup := range sccTemplate.Groups {
@@ -66,10 +70,10 @@ func verifySCC(scc security.SecurityContextConstraints, sccTemplate security.Sec
 	localSccTemplate.Groups = []string{}
 	//added only to remove function side effects
 	localScc := scc.DeepCopy()
-	//ignore ObjectMeta
-	localSccTemplate.ObjectMeta = metav1.ObjectMeta{}
-	localSccTemplate.Users = []string{}
-	localSccTemplate.Groups = []string{}
+	//ignore ObjectMeta in further comparisons
+	localScc.ObjectMeta = metav1.ObjectMeta{}
+	localScc.Users = []string{}
+	localScc.Groups = []string{}
 
 	if !reflect.DeepEqual(localScc, localSccTemplate) {
 		errs = append(errs, fmt.Errorf("Modification of fields other than Users and Groups in the SCC is not allowed"))

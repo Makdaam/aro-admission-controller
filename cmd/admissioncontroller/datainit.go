@@ -23,9 +23,9 @@ func (ac *admissionController) InitProtectedSCCs() map[string]security.SecurityC
 		"anyuid": {
 			Priority:                 toInt32Ptr(10),
 			AllowPrivilegedContainer: false,
-			DefaultAddCapabilities:   []core.Capability{},
+			DefaultAddCapabilities:   nil,
 			RequiredDropCapabilities: []core.Capability{"MKNOD"},
-			AllowedCapabilities:      []core.Capability{},
+			AllowedCapabilities:      nil,
 			Volumes: []security.FSType{
 				security.FSTypeConfigMap,
 				security.FSTypeDownwardAPI,
@@ -39,10 +39,7 @@ func (ac *admissionController) InitProtectedSCCs() map[string]security.SecurityC
 			AllowHostPID:             false,
 			AllowHostIPC:             false,
 			AllowPrivilegeEscalation: toBoolPtr(true),
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "security.openshift.io/v1",
-				Kind:       "SecurityContextConstraints",
-			},
+			TypeMeta:                 metav1.TypeMeta{},
 			FSGroup: security.FSGroupStrategyOptions{
 				Type: security.FSGroupStrategyRunAsAny,
 			},
@@ -60,7 +57,251 @@ func (ac *admissionController) InitProtectedSCCs() map[string]security.SecurityC
 				Type: security.SupplementalGroupsStrategyRunAsAny,
 			},
 		},
-		//TODO add other SCCs
+		"hostaccess": {
+			Priority:                 toInt32Ptr(10),
+			AllowPrivilegedContainer: false,
+			DefaultAddCapabilities:   nil,
+			RequiredDropCapabilities: []core.Capability{"KILL", "MKNOD", "SETUID", "SETGID"},
+			AllowedCapabilities:      nil,
+			Volumes: []security.FSType{
+				security.FSTypeConfigMap,
+				security.FSTypeDownwardAPI,
+				security.FSTypeEmptyDir,
+				security.FSTypeHostPath,
+				security.FSTypePersistentVolumeClaim,
+				security.FSProjected,
+				security.FSTypeSecret,
+			},
+			AllowHostNetwork:         true,
+			AllowHostPorts:           true,
+			AllowHostPID:             true,
+			AllowHostIPC:             true,
+			AllowPrivilegeEscalation: toBoolPtr(true),
+			TypeMeta:                 metav1.TypeMeta{},
+			FSGroup: security.FSGroupStrategyOptions{
+				Type: security.FSGroupStrategyMustRunAs,
+			},
+			Groups: []string{},
+			RunAsUser: security.RunAsUserStrategyOptions{
+				Type: security.RunAsUserStrategyMustRunAsRange,
+			},
+			SELinuxContext: security.SELinuxContextStrategyOptions{
+				Type: security.SELinuxStrategyMustRunAs,
+			},
+			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
+				Type: security.SupplementalGroupsStrategyRunAsAny,
+			},
+		},
+		"hostmount-anyuid": {
+			Priority:                 nil,
+			AllowPrivilegedContainer: false,
+			DefaultAddCapabilities:   nil,
+			RequiredDropCapabilities: []core.Capability{"MKNOD"},
+			AllowedCapabilities:      nil,
+			Volumes: []security.FSType{
+				security.FSTypeConfigMap,
+				security.FSTypeDownwardAPI,
+				security.FSTypeEmptyDir,
+				security.FSTypeHostPath,
+				security.FSTypeNFS,
+				security.FSTypePersistentVolumeClaim,
+				security.FSProjected,
+				security.FSTypeSecret,
+			},
+			AllowHostNetwork:         false,
+			AllowHostPorts:           false,
+			AllowHostPID:             false,
+			AllowHostIPC:             false,
+			AllowPrivilegeEscalation: toBoolPtr(true),
+			TypeMeta:                 metav1.TypeMeta{},
+			FSGroup: security.FSGroupStrategyOptions{
+				Type: security.FSGroupStrategyRunAsAny,
+			},
+			Groups: []string{},
+			RunAsUser: security.RunAsUserStrategyOptions{
+				Type: security.RunAsUserStrategyRunAsAny,
+			},
+			SELinuxContext: security.SELinuxContextStrategyOptions{
+				Type: security.SELinuxStrategyMustRunAs,
+			},
+			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
+				Type: security.SupplementalGroupsStrategyRunAsAny,
+			},
+		},
+		"hostnetwork": {
+			Priority:                 nil,
+			AllowPrivilegedContainer: false,
+			DefaultAddCapabilities:   nil,
+			RequiredDropCapabilities: []core.Capability{"KILL", "MKNOD", "SETUID", "SETGID"},
+			AllowedCapabilities:      nil,
+			Volumes: []security.FSType{
+				security.FSTypeConfigMap,
+				security.FSTypeDownwardAPI,
+				security.FSTypeEmptyDir,
+				security.FSTypePersistentVolumeClaim,
+				security.FSProjected,
+				security.FSTypeSecret,
+			},
+			AllowHostNetwork:         true,
+			AllowHostPorts:           true,
+			AllowHostPID:             false,
+			AllowHostIPC:             false,
+			AllowPrivilegeEscalation: toBoolPtr(true),
+			TypeMeta:                 metav1.TypeMeta{},
+			FSGroup: security.FSGroupStrategyOptions{
+				Type: security.FSGroupStrategyMustRunAs,
+			},
+			Groups: []string{},
+			RunAsUser: security.RunAsUserStrategyOptions{
+				Type: security.RunAsUserStrategyMustRunAsRange,
+			},
+			SELinuxContext: security.SELinuxContextStrategyOptions{
+				Type: security.SELinuxStrategyMustRunAs,
+			},
+			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
+				Type: security.SupplementalGroupsStrategyMustRunAs,
+			},
+		},
+		"node-exporter": {
+			Priority:                 nil,
+			AllowPrivilegedContainer: false,
+			DefaultAddCapabilities:   nil,
+			RequiredDropCapabilities: nil,
+			AllowedCapabilities:      nil,
+			Volumes: []security.FSType{
+				security.FSTypeAll,
+			},
+			AllowHostNetwork:         true,
+			AllowHostPorts:           true,
+			AllowHostPID:             true,
+			AllowHostIPC:             false,
+			AllowPrivilegeEscalation: toBoolPtr(true),
+			TypeMeta:                 metav1.TypeMeta{},
+			FSGroup: security.FSGroupStrategyOptions{
+				Type: security.FSGroupStrategyRunAsAny,
+			},
+			Groups: []string{},
+			RunAsUser: security.RunAsUserStrategyOptions{
+				Type: security.RunAsUserStrategyRunAsAny,
+			},
+			SELinuxContext: security.SELinuxContextStrategyOptions{
+				Type: security.SELinuxStrategyRunAsAny,
+			},
+			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
+				Type: security.SupplementalGroupsStrategyRunAsAny,
+			},
+		},
+		"nonroot": {
+			Priority:                 nil,
+			AllowPrivilegedContainer: false,
+			DefaultAddCapabilities:   nil,
+			RequiredDropCapabilities: []core.Capability{"KILL", "MKNOD", "SETUID", "SETGID"},
+			AllowedCapabilities:      nil,
+			Volumes: []security.FSType{
+				security.FSTypeConfigMap,
+				security.FSTypeDownwardAPI,
+				security.FSTypeEmptyDir,
+				security.FSTypePersistentVolumeClaim,
+				security.FSProjected,
+				security.FSTypeSecret,
+			},
+			AllowHostNetwork:         false,
+			AllowHostPorts:           false,
+			AllowHostPID:             false,
+			AllowHostIPC:             false,
+			AllowPrivilegeEscalation: toBoolPtr(true),
+			TypeMeta:                 metav1.TypeMeta{},
+			FSGroup: security.FSGroupStrategyOptions{
+				Type: security.FSGroupStrategyRunAsAny,
+			},
+			Groups: []string{},
+			RunAsUser: security.RunAsUserStrategyOptions{
+				Type: security.RunAsUserStrategyMustRunAsNonRoot,
+			},
+			SELinuxContext: security.SELinuxContextStrategyOptions{
+				Type: security.SELinuxStrategyMustRunAs,
+			},
+			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
+				Type: security.SupplementalGroupsStrategyRunAsAny,
+			},
+		},
+		"privileged": {
+			Priority:                 nil,
+			AllowPrivilegedContainer: true,
+			DefaultAddCapabilities:   nil,
+			RequiredDropCapabilities: nil,
+			AllowedCapabilities:      []core.Capability{"*"},
+			Volumes: []security.FSType{
+				security.FSTypeAll,
+			},
+			AllowHostNetwork:         true,
+			AllowHostPorts:           true,
+			AllowHostPID:             true,
+			AllowHostIPC:             true,
+			AllowPrivilegeEscalation: toBoolPtr(true),
+			TypeMeta:                 metav1.TypeMeta{},
+			FSGroup: security.FSGroupStrategyOptions{
+				Type: security.FSGroupStrategyRunAsAny,
+			},
+			Groups: []string{
+				"system:cluster-admins",
+				"system:nodes",
+				"system:masters",
+			},
+			Users: []string{
+				"system:admin",
+				"system:serviceaccount:openshift-infra:build-controller",
+				"system:serviceaccount:openshift-etcd:etcd-backup",
+				"system:serviceaccount:openshift-azure-logging:log-analytics-agent",
+				"system:serviceaccount:kube-system:symc",
+			},
+			RunAsUser: security.RunAsUserStrategyOptions{
+				Type: security.RunAsUserStrategyRunAsAny,
+			},
+			SELinuxContext: security.SELinuxContextStrategyOptions{
+				Type: security.SELinuxStrategyRunAsAny,
+			},
+			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
+				Type: security.SupplementalGroupsStrategyRunAsAny,
+			},
+		},
+		"restricted": {
+			Priority:                 nil,
+			AllowPrivilegedContainer: false,
+			DefaultAddCapabilities:   nil,
+			RequiredDropCapabilities: []core.Capability{"KILL", "MKNOD", "SETUID", "SETGID"},
+			AllowedCapabilities:      nil,
+			Volumes: []security.FSType{
+				security.FSTypeConfigMap,
+				security.FSTypeDownwardAPI,
+				security.FSTypeEmptyDir,
+				security.FSTypePersistentVolumeClaim,
+				security.FSProjected,
+				security.FSTypeSecret,
+			},
+			AllowHostNetwork:         false,
+			AllowHostPorts:           false,
+			AllowHostPID:             false,
+			AllowHostIPC:             false,
+			AllowPrivilegeEscalation: toBoolPtr(true),
+			TypeMeta:                 metav1.TypeMeta{},
+			FSGroup: security.FSGroupStrategyOptions{
+				Type: security.FSGroupStrategyMustRunAs,
+			},
+			Groups: []string{
+				"system:authenticated",
+			},
+			Users: []string{},
+			RunAsUser: security.RunAsUserStrategyOptions{
+				Type: security.RunAsUserStrategyMustRunAsRange,
+			},
+			SELinuxContext: security.SELinuxContextStrategyOptions{
+				Type: security.SELinuxStrategyMustRunAs,
+			},
+			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
+				Type: security.SupplementalGroupsStrategyRunAsAny,
+			},
+		},
 	}
 	return result
 }
