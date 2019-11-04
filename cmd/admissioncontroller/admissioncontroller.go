@@ -126,15 +126,14 @@ type admissionController struct {
 func (ac *admissionController) run() error {
 	ac.protectedSCCs = ac.InitProtectedSCCs()
 	mux := &http.ServeMux{}
-	mux.HandleFunc("/pods", ac.handlePod)
-	mux.HandleFunc("/daemonsets", ac.handleDaemonSet)
-	mux.HandleFunc("/replicasets", ac.handleReplicaSet)
-	mux.HandleFunc("/statefulsets", ac.handleStatefulSet)
-	mux.HandleFunc("/jobs", ac.handleJob)
-	mux.HandleFunc("/cronjobs", ac.handleCronJob)
-	mux.HandleFunc("/deploymentconfigs", ac.handleDeploymentConfig)
-	// TODO
-	//mux.HandleFunc("/deployments", ac.handleDeployment)
+	mux.HandleFunc("/pods", ac.handleWhitelist)
+	mux.HandleFunc("/daemonsets", ac.handleWhitelist)
+	mux.HandleFunc("/replicasets", ac.handleWhitelist)
+	mux.HandleFunc("/statefulsets", ac.handleWhitelist)
+	mux.HandleFunc("/jobs", ac.handleWhitelist)
+	mux.HandleFunc("/cronjobs", ac.handleWhitelist)
+	mux.HandleFunc("/deploymentconfigs", ac.handleWhitelist)
+	mux.HandleFunc("/deployments", ac.handleWhitelist)
 	mux.HandleFunc("/sccs", ac.handleSCC)
 
 	mux.HandleFunc("/healthz", ac.handleHealthz)
@@ -207,7 +206,6 @@ func run() error {
 
 	return ac.run()
 }
-
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)

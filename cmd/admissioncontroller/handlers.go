@@ -9,6 +9,9 @@ import (
 	"regexp"
 	"strings"
 
+	admissionv1beta1 "k8s.io/api/admission/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -18,16 +21,17 @@ import (
 	"k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 
-	_ "github.com/openshift/origin/pkg/api/install"
+	"github.com/davecgh/go-spew/spew"
 	oapps "github.com/openshift/origin/pkg/apps/apis/apps"
 	"github.com/openshift/origin/pkg/security/apis/security"
 	"github.com/openshift/origin/pkg/security/apiserver/securitycontextconstraints"
-	admissionv1beta1 "k8s.io/api/admission/v1beta1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	//installing decoders for openshift resources
+	_ "github.com/openshift/origin/pkg/api/install"
 )
 
 // verifySCC makes sure that nothing besides additional users or groups are
-// different between and SCC and an SCCTemplate.
+// different between the SCC and an SCCTemplate.
 func verifySCC(scc security.SecurityContextConstraints, sccTemplate security.SecurityContextConstraints) errors.Aggregate {
 	var errs []error
 	//checking ObjectMeta
@@ -74,7 +78,6 @@ func verifySCC(scc security.SecurityContextConstraints, sccTemplate security.Sec
 	localScc.ObjectMeta = metav1.ObjectMeta{}
 	localScc.Users = []string{}
 	localScc.Groups = []string{}
-
 	if !reflect.DeepEqual(localScc, localSccTemplate) {
 		errs = append(errs, fmt.Errorf("Modification of fields other than Users and Groups in the SCC is not allowed"))
 	}
@@ -83,19 +86,35 @@ func verifySCC(scc security.SecurityContextConstraints, sccTemplate security.Sec
 
 func (ac *admissionController) handleSCC(w http.ResponseWriter, r *http.Request) {
 	req, errcode := getAdmissionReviewRequest(r)
+	log.Print("New SCC validation request")
 	if errcode != 0 {
 		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
 		return
 	}
-	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
-	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
+	if req.Operation == admissionv1beta1.Delete {
+		//allow Delete only on SCC which are not in the protected map
+		_, protected := ac.protectedSCCs[req.Name]
+		if protected {
+			errs := []error{fmt.Errorf("Deleting of this SCC is not allowed")}
+			sendResult(errors.NewAggregate(errs), w, req.UID)
+		} else {
+			sendResult(nil, w, req.UID)
+		}
+		return
+	}
+	//if Operation is Create,Update (Connect not configured in ValidatingWebhookConfiguration)
+	//gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	log.Printf("TODO B %#v", string(req.Object.Raw))
+	o, _, err := codec.Decode(req.Object.Raw, nil, nil)
 	if err != nil {
 		log.Printf("Decode error:  %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	scc := o.(*security.SecurityContextConstraints)
+	spew.Dump(scc)
 	sccTemplate, protected := ac.protectedSCCs[scc.Name]
+	log.Printf("TODO C %s", scc.ObjectMeta.Name)
 	if protected {
 		//SCC in the set of protected SCCs
 		//only allow additional users and groups
@@ -132,7 +151,6 @@ func podSpecIsWhitelisted(spec *core.PodSpec, whitelistedImages []*regexp.Regexp
 	}
 	containers := append([]core.Container{}, spec.Containers...)
 	containers = append(containers, spec.InitContainers...)
-
 	for _, c := range containers {
 		log.Printf("Image %s", c.Image)
 		if !imageIsWhitelisted(c.Image, whitelistedImages) {
@@ -163,9 +181,9 @@ func getAdmissionReviewRequest(r *http.Request) (req *admissionv1beta1.Admission
 		return nil, http.StatusMethodNotAllowed
 	}
 	if r.Header.Get("Content-Type") != "application/json" {
-
 		return nil, http.StatusUnsupportedMediaType
 	}
+
 	var reviewIncoming *admissionv1beta1.AdmissionReview
 	err := json.NewDecoder(r.Body).Decode(&reviewIncoming)
 	if err != nil {
@@ -175,191 +193,65 @@ func getAdmissionReviewRequest(r *http.Request) (req *admissionv1beta1.Admission
 	return req, 0
 }
 
-func (ac *admissionController) handlePod(w http.ResponseWriter, r *http.Request) {
+func (ac *admissionController) handleWhitelist(w http.ResponseWriter, r *http.Request) {
+	unpackers := map[string]func(runtime.Object) (core.PodSpec, metav1.ObjectMeta, string){
+		"Pod": func(o runtime.Object) (core.PodSpec, metav1.ObjectMeta, string) {
+			pod := o.(*core.Pod)
+			return pod.Spec, pod.ObjectMeta, pod.Namespace
+		},
+		"DaemonSet": func(o runtime.Object) (core.PodSpec, metav1.ObjectMeta, string) {
+			ds := o.(*extensions.DaemonSet)
+			return ds.Spec.Template.Spec, ds.Spec.Template.ObjectMeta, ds.Namespace
+		},
+		"ReplicaSet": func(o runtime.Object) (core.PodSpec, metav1.ObjectMeta, string) {
+			rs := o.(*extensions.ReplicaSet)
+			return rs.Spec.Template.Spec, rs.Spec.Template.ObjectMeta, rs.Namespace
+		},
+		"StatefulSet": func(o runtime.Object) (core.PodSpec, metav1.ObjectMeta, string) {
+			ss := o.(*apps.StatefulSet)
+			return ss.Spec.Template.Spec, ss.Spec.Template.ObjectMeta, ss.Namespace
+		},
+		"Job": func(o runtime.Object) (core.PodSpec, metav1.ObjectMeta, string) {
+			job := o.(*batch.Job)
+			return job.Spec.Template.Spec, job.Spec.Template.ObjectMeta, job.Namespace
+		},
+		"CronJob": func(o runtime.Object) (core.PodSpec, metav1.ObjectMeta, string) {
+			cj := o.(*batch.CronJob)
+			return cj.Spec.JobTemplate.Spec.Template.Spec, cj.Spec.JobTemplate.Spec.Template.ObjectMeta, cj.Namespace
+		},
+		"DeploymentConfig": func(o runtime.Object) (core.PodSpec, metav1.ObjectMeta, string) {
+			dc := o.(*oapps.DeploymentConfig)
+			return dc.Spec.Template.Spec, dc.Spec.Template.ObjectMeta, dc.Namespace
+		},
+		"Deployment": func(o runtime.Object) (core.PodSpec, metav1.ObjectMeta, string) {
+			dp := o.(*extensions.Deployment)
+			return dp.Spec.Template.Spec, dp.Spec.Template.ObjectMeta, dp.Namespace
+		},
+	}
 	req, errcode := getAdmissionReviewRequest(r)
 	if errcode != 0 {
-		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
+		http.Error(w, http.StatusText(errcode), errcode)
 		return
 	}
-	if req.UID == "" ||
-		req.Kind.Group != "" || req.Kind.Version != "v1" || req.Kind.Kind != "Pod" ||
-		req.Resource.Group != "" || req.Resource.Version != "v1" || req.Resource.Resource != "pods" ||
-		req.SubResource != "" {
+	log.Printf("TODO A %s", req.Name)
+	if req.UID == "" || req.Kind.Version == "" || req.Kind.Kind == "" {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
-
 	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
-	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
+	o, gvkDecoded, err := codec.Decode(req.Object.Raw, &gvk, nil)
 	if err != nil {
 		log.Printf("Decode error:  %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	pod := o.(*core.Pod)
-	ac.checkPodSpec(pod.Spec, pod.ObjectMeta, pod.Namespace, w, req.UID)
-}
+	unpackingFunc, found := unpackers[gvkDecoded.Kind]
+	if !found {
+		http.Error(w, http.StatusText(http.StatusNotImplemented), http.StatusNotImplemented)
+	}
+	spec, meta, namespace := unpackingFunc(o)
 
-func (ac *admissionController) handleDaemonSet(w http.ResponseWriter, r *http.Request) {
-	req, errcode := getAdmissionReviewRequest(r)
-	if errcode != 0 {
-		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
-		return
-	}
-	if req.UID == "" ||
-		req.Kind.Group != "apps" || req.Kind.Version != "v1" || req.Kind.Kind != "DaemonSet" ||
-		req.Resource.Group != "apps" || req.Resource.Version != "v1" || req.Resource.Resource != "daemonsets" ||
-		req.SubResource != "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		log.Printf("Field mismatch")
-		return
-	}
-
-	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
-	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
-	if err != nil {
-		log.Printf("Decode error:  %s", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	ds := o.(*extensions.DaemonSet)
-	ac.checkPodSpec(ds.Spec.Template.Spec, ds.Spec.Template.ObjectMeta, ds.Namespace, w, req.UID)
-}
-
-func (ac *admissionController) handleReplicaSet(w http.ResponseWriter, r *http.Request) {
-	req, errcode := getAdmissionReviewRequest(r)
-	if errcode != 0 {
-		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
-		return
-	}
-	if req.UID == "" ||
-		req.Kind.Group != "apps" || req.Kind.Version != "v1" || req.Kind.Kind != "ReplicaSet" ||
-		req.Resource.Group != "apps" || req.Resource.Version != "v1" || req.Resource.Resource != "replicasets" ||
-		req.SubResource != "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		log.Printf("Field mismatch")
-		return
-	}
-
-	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
-	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
-	if err != nil {
-		log.Printf("Decode error:  %s", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	rs := o.(*extensions.ReplicaSet)
-	ac.checkPodSpec(rs.Spec.Template.Spec, rs.Spec.Template.ObjectMeta, rs.Namespace, w, req.UID)
-}
-
-func (ac *admissionController) handleStatefulSet(w http.ResponseWriter, r *http.Request) {
-	req, errcode := getAdmissionReviewRequest(r)
-	if errcode != 0 {
-		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
-		return
-	}
-	if req.UID == "" ||
-		req.Kind.Group != "apps" || req.Kind.Version != "v1" || req.Kind.Kind != "StatefulSet" ||
-		req.Resource.Group != "apps" || req.Resource.Version != "v1" || req.Resource.Resource != "statefulsets" ||
-		req.SubResource != "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		log.Printf("Field mismatch")
-		return
-	}
-
-	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
-	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
-	if err != nil {
-		log.Printf("Decode error:  %s", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	ss := o.(*apps.StatefulSet)
-	ac.checkPodSpec(ss.Spec.Template.Spec, ss.Spec.Template.ObjectMeta, ss.Namespace, w, req.UID)
-}
-
-func (ac *admissionController) handleJob(w http.ResponseWriter, r *http.Request) {
-	req, errcode := getAdmissionReviewRequest(r)
-	if errcode != 0 {
-		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
-		return
-	}
-	if req.UID == "" ||
-		req.Kind.Group != "batch" || req.Kind.Version != "v1" || req.Kind.Kind != "Job" ||
-		req.Resource.Group != "batch" || req.Resource.Version != "v1" || req.Resource.Resource != "jobs" ||
-		req.SubResource != "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		log.Printf("Field mismatch")
-		return
-	}
-
-	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
-	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
-	if err != nil {
-		log.Printf("Decode error:  %s", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	job := o.(*batch.Job)
-	ac.checkPodSpec(job.Spec.Template.Spec, job.Spec.Template.ObjectMeta, job.Namespace, w, req.UID)
-}
-
-func (ac *admissionController) handleCronJob(w http.ResponseWriter, r *http.Request) {
-	req, errcode := getAdmissionReviewRequest(r)
-	if errcode != 0 {
-		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
-		return
-	}
-	if req.UID == "" ||
-		req.Kind.Group != "batch" || req.Kind.Version != "v1beta1" || req.Kind.Kind != "CronJob" ||
-		req.Resource.Group != "batch" || req.Resource.Version != "v1beta1" || req.Resource.Resource != "cronjobs" ||
-		req.SubResource != "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		log.Printf("Field mismatch")
-		return
-	}
-
-	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
-	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
-	if err != nil {
-		log.Printf("Decode error:  %s", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	cj := o.(*batch.CronJob)
-	ac.checkPodSpec(cj.Spec.JobTemplate.Spec.Template.Spec, cj.Spec.JobTemplate.Spec.Template.ObjectMeta, cj.Namespace, w, req.UID)
-}
-
-func (ac *admissionController) handleDeploymentConfig(w http.ResponseWriter, r *http.Request) {
-	req, errcode := getAdmissionReviewRequest(r)
-	if errcode != 0 {
-		http.Error(w, http.StatusText(http.StatusUnsupportedMediaType), http.StatusUnsupportedMediaType)
-		return
-	}
-	log.Printf("K %s %s %s", req.Kind.Group, req.Kind.Version, req.Kind.Kind)
-	log.Printf("R %s %s %s", req.Resource.Group, req.Resource.Version, req.Resource.Resource)
-	if req.UID == "" ||
-		req.Kind.Group != "apps" || req.Kind.Version != "v1" || req.Kind.Kind != "DeploymentConfig" ||
-		req.Resource.Group != "apps" || req.Resource.Version != "v1" || req.Resource.Resource != "deploymentconfigs" ||
-		req.SubResource != "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-		log.Printf("Field mismatch")
-		return
-	}
-	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
-	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
-	if err != nil {
-		log.Printf("Decode error %s", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	dc := o.(*oapps.DeploymentConfig)
-	ac.checkPodSpec(dc.Spec.Template.Spec, dc.Spec.Template.ObjectMeta, dc.Namespace, w, req.UID)
-}
-
-func (ac *admissionController) handleDeployment(w http.ResponseWriter, r *http.Request) {
-	//TODO finish and test
-
+	ac.checkPodSpec(spec, meta, namespace, w, req.UID)
 }
 
 //checkPodSpec checks if the Pod spec is either whitelisted or will match the restricted scc, then prepares an HTTP response
@@ -384,10 +276,13 @@ func sendResult(errs errors.Aggregate, w http.ResponseWriter, uid types.UID) {
 	}
 	if errs != nil && len(errs.Errors()) > 0 {
 		log.Printf("Found %d errs when validating", len(errs.Errors()))
+		log.Printf("Error:%s", errs.Error())
 		result = &metav1.Status{
 			Status:  metav1.StatusFailure,
 			Message: errs.Error(),
 		}
+	} else {
+		log.Print("No errors found, approved")
 	}
 	rev := &admissionv1beta1.AdmissionReview{
 		TypeMeta: metav1.TypeMeta{

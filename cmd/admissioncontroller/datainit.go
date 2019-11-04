@@ -58,7 +58,7 @@ func (ac *admissionController) InitProtectedSCCs() map[string]security.SecurityC
 			},
 		},
 		"hostaccess": {
-			Priority:                 toInt32Ptr(10),
+			Priority:                 nil,
 			AllowPrivilegedContainer: false,
 			DefaultAddCapabilities:   nil,
 			RequiredDropCapabilities: []core.Capability{"KILL", "MKNOD", "SETUID", "SETGID"},
@@ -162,35 +162,6 @@ func (ac *admissionController) InitProtectedSCCs() map[string]security.SecurityC
 				Type: security.SupplementalGroupsStrategyMustRunAs,
 			},
 		},
-		"node-exporter": {
-			Priority:                 nil,
-			AllowPrivilegedContainer: false,
-			DefaultAddCapabilities:   nil,
-			RequiredDropCapabilities: nil,
-			AllowedCapabilities:      nil,
-			Volumes: []security.FSType{
-				security.FSTypeAll,
-			},
-			AllowHostNetwork:         true,
-			AllowHostPorts:           true,
-			AllowHostPID:             true,
-			AllowHostIPC:             false,
-			AllowPrivilegeEscalation: toBoolPtr(true),
-			TypeMeta:                 metav1.TypeMeta{},
-			FSGroup: security.FSGroupStrategyOptions{
-				Type: security.FSGroupStrategyRunAsAny,
-			},
-			Groups: []string{},
-			RunAsUser: security.RunAsUserStrategyOptions{
-				Type: security.RunAsUserStrategyRunAsAny,
-			},
-			SELinuxContext: security.SELinuxContextStrategyOptions{
-				Type: security.SELinuxStrategyRunAsAny,
-			},
-			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
-				Type: security.SupplementalGroupsStrategyRunAsAny,
-			},
-		},
 		"nonroot": {
 			Priority:                 nil,
 			AllowPrivilegedContainer: false,
@@ -253,7 +224,7 @@ func (ac *admissionController) InitProtectedSCCs() map[string]security.SecurityC
 				"system:serviceaccount:openshift-infra:build-controller",
 				"system:serviceaccount:openshift-etcd:etcd-backup",
 				"system:serviceaccount:openshift-azure-logging:log-analytics-agent",
-				"system:serviceaccount:kube-system:symc",
+				"system:serviceaccount:kube-system:sync",
 			},
 			RunAsUser: security.RunAsUserStrategyOptions{
 				Type: security.RunAsUserStrategyRunAsAny,
@@ -263,6 +234,12 @@ func (ac *admissionController) InitProtectedSCCs() map[string]security.SecurityC
 			},
 			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
 				Type: security.SupplementalGroupsStrategyRunAsAny,
+			},
+			SeccompProfiles: []string{
+				"*",
+			},
+			AllowedUnsafeSysctls: []string{
+				"*",
 			},
 		},
 		"restricted": {
