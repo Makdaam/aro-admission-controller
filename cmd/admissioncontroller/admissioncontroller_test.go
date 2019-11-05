@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	_ "github.com/openshift/origin/pkg/api/install"
-	"github.com/openshift/origin/pkg/security/apis/security"
 	_ "github.com/openshift/origin/pkg/security/apis/security/install"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
 	corev1 "k8s.io/api/core/v1"
@@ -525,58 +524,499 @@ func TestHandleSCCHappyPath(t *testing.T) {
 
 	for _, test := range []struct {
 		name     string
-		scc      security.SecurityContextConstraints
+		scc      string
 		response *admissionv1beta1.AdmissionResponse
 	}{
 		{
-			name: "protected SCC, changed allowprivilegedcontainer, forbid",
-			scc: security.SecurityContextConstraints{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "anyuid",
+			name: "protected SCC, added user, allow",
+			scc: `{
+				"metadata": {
+					"name": "hostmount-anyuid",
+					"selfLink": "/apis/security.openshift.io/v1/securitycontextconstraints/hostmount-anyuid",
+					"uid": "a615e699-fef2-11e9-b5af-000d3aaa0ca7",
+					"resourceVersion": "3754",
+					"creationTimestamp": "2019-11-04T11:02:53Z",
+					"labels": {
+						"azure.openshift.io/owned-by-sync-pod": "true"
+					},
+					"annotations": {
+						"kubernetes.io/description": "hostmount-anyuid provides all the features of the restricted SCC but allows host mounts and any UID by a pod.  This is primarily used by the persistent volume recycler. WARNING: this SCC allows host file system access as any UID, including UID 0.  Grant with caution.",
+						"openshift.io/reconcile-protect": "true"
+					}
 				},
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "security.openshift.io/v1",
-					Kind:       "SecurityContextConstraints",
+				"priority": null,
+				"allowPrivilegedContainer": false,
+				"defaultAddCapabilities": null,
+				"requiredDropCapabilities": [
+					"MKNOD"
+				],
+				"allowedCapabilities": null,
+				"allowHostDirVolumePlugin": true,
+				"volumes": [
+					"configMap",
+					"downwardAPI",
+					"emptyDir",
+					"hostPath",
+					"nfs",
+					"persistentVolumeClaim",
+					"projected",
+					"secret"
+				],
+				"allowHostNetwork": false,
+				"allowHostPorts": false,
+				"allowHostPID": false,
+				"allowHostIPC": false,
+				"allowPrivilegeEscalation": true,
+				"seLinuxContext": {
+					"type": "MustRunAs"
 				},
-				Priority:                 toInt32Ptr(10),
-				AllowPrivilegedContainer: true, //changed vs template
-				DefaultAddCapabilities:   nil,
-				RequiredDropCapabilities: []core.Capability{"MKNOD"},
-				AllowedCapabilities:      nil,
-				Volumes: []security.FSType{
-					security.FSTypeConfigMap,
-					security.FSTypeDownwardAPI,
-					security.FSTypeEmptyDir,
-					security.FSTypePersistentVolumeClaim,
-					security.FSProjected,
-					security.FSTypeSecret,
+				"runAsUser": {
+					"type": "RunAsAny"
 				},
-				AllowHostNetwork:         false,
-				AllowHostPorts:           false,
-				AllowHostPID:             false,
-				AllowHostIPC:             false,
-				AllowPrivilegeEscalation: toBoolPtr(true),
-				FSGroup: security.FSGroupStrategyOptions{
-					Type: security.FSGroupStrategyRunAsAny,
+				"supplementalGroups": {
+					"type": "RunAsAny"
 				},
-				Groups: []string{
-					"system:cluster-admins",
+				"fsGroup": {
+					"type": "RunAsAny"
 				},
-
-				RunAsUser: security.RunAsUserStrategyOptions{
-					Type: security.RunAsUserStrategyRunAsAny,
-				},
-				SELinuxContext: security.SELinuxContextStrategyOptions{
-					Type: security.SELinuxStrategyMustRunAs,
-				},
-				SupplementalGroups: security.SupplementalGroupsStrategyOptions{
-					Type: security.SupplementalGroupsStrategyRunAsAny,
+				"readOnlyRootFilesystem": false,
+				"users": [
+					"system:serviceaccount:openshift-azure-monitoring:etcd-metrics",
+					"system:serviceaccount:openshift-infra:pv-recycler-controller",
+					"system:serviceaccount:kube-service-catalog:service-catalog-apiserver",
+					"myuser"
+				],
+				"groups": []
+			}
+			`,
+			response: &admissionv1beta1.AdmissionResponse{
+				UID:     "uid",
+				Allowed: true,
+				Result: &metav1.Status{
+					Status: metav1.StatusSuccess,
 				},
 			},
-
+		},
+		{
+			name: "protected SCC, remove system user, forbid",
+			scc: `{
+				"metadata": {
+					"name": "hostmount-anyuid",
+					"selfLink": "/apis/security.openshift.io/v1/securitycontextconstraints/hostmount-anyuid",
+					"uid": "a615e699-fef2-11e9-b5af-000d3aaa0ca7",
+					"resourceVersion": "3754",
+					"creationTimestamp": "2019-11-04T11:02:53Z",
+					"labels": {
+						"azure.openshift.io/owned-by-sync-pod": "true"
+					},
+					"annotations": {
+						"kubernetes.io/description": "hostmount-anyuid provides all the features of the restricted SCC but allows host mounts and any UID by a pod.  This is primarily used by the persistent volume recycler. WARNING: this SCC allows host file system access as any UID, including UID 0.  Grant with caution.",
+						"openshift.io/reconcile-protect": "true"
+					}
+				},
+				"priority": null,
+				"allowPrivilegedContainer": false,
+				"defaultAddCapabilities": null,
+				"requiredDropCapabilities": [
+					"MKNOD"
+				],
+				"allowedCapabilities": null,
+				"allowHostDirVolumePlugin": true,
+				"volumes": [
+					"configMap",
+					"downwardAPI",
+					"emptyDir",
+					"hostPath",
+					"nfs",
+					"persistentVolumeClaim",
+					"projected",
+					"secret"
+				],
+				"allowHostNetwork": false,
+				"allowHostPorts": false,
+				"allowHostPID": false,
+				"allowHostIPC": false,
+				"allowPrivilegeEscalation": true,
+				"seLinuxContext": {
+					"type": "MustRunAs"
+				},
+				"runAsUser": {
+					"type": "RunAsAny"
+				},
+				"supplementalGroups": {
+					"type": "RunAsAny"
+				},
+				"fsGroup": {
+					"type": "RunAsAny"
+				},
+				"readOnlyRootFilesystem": false,
+				"users": [
+					"system:serviceaccount:openshift-azure-monitoring:etcd-metrics",
+					"system:serviceaccount:openshift-infra:pv-recycler-controller"
+				],
+				"groups": []
+			}
+			`,
 			response: &admissionv1beta1.AdmissionResponse{
 				UID:     "uid",
 				Allowed: false,
+				Result: &metav1.Status{
+					Status:  metav1.StatusFailure,
+					Message: "Removal of User system:serviceaccount:kube-service-catalog:service-catalog-apiserver from SCC is not allowed",
+				},
+			},
+		},
+		{
+			name: "protected SCC, added group, allow",
+			scc: `{
+				"allowHostIPC": false,
+				"allowHostNetwork": false,
+				"allowHostPID": false,
+				"allowHostPorts": false,
+				"allowPrivilegeEscalation": true,
+				"allowPrivilegedContainer": false,
+				"allowedCapabilities": null,
+				"allowedFlexVolumes": null,
+				"allowedUnsafeSysctls": null,
+				"defaultAddCapabilities": null,
+				"defaultAllowPrivilegeEscalation": null,
+				"fSGroup": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"forbiddenSysctls": null,
+				"groups": [
+					"system:cluster-admins",
+					"myowngroup"
+				],
+				"metadata": {
+					"creationTimestamp": null,
+					"name": "anyuid",
+					"labels": {
+						"azure.openshift.io/owned-by-sync-pod": "true"
+					}
+				},
+				"priority": 10,
+				"readOnlyRootFilesystem": false,
+				"requiredDropCapabilities": [
+					"MKNOD"
+				],
+				"runAsUser": {
+					"type": "RunAsAny",
+					"uID": null,
+					"uIDRangeMax": null,
+					"uIDRangeMin": null
+				},
+				"seLinuxContext": {
+					"seLinuxOptions": null,
+					"type": "MustRunAs"
+				},
+				"seccompProfiles": null,
+				"supplementalGroups": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"typeMeta": {
+					"apiVersion": "security.openshift.io/v1",
+					"kind": "SecurityContextConstraints"
+				},
+				"users": null,
+				"volumes": [
+					"configMap",
+					"downwardAPI",
+					"emptyDir",
+					"persistentVolumeClaim",
+					"projected",
+					"secret"
+				]
+			}
+			`,
+			response: &admissionv1beta1.AdmissionResponse{
+				UID:     "uid",
+				Allowed: true,
+				Result: &metav1.Status{
+					Status: metav1.StatusSuccess,
+				},
+			},
+		},
+		{
+			name: "protected SCC, remove system group, forbid",
+			scc: `{
+				"allowHostIPC": false,
+				"allowHostNetwork": false,
+				"allowHostPID": false,
+				"allowHostPorts": false,
+				"allowPrivilegeEscalation": true,
+				"allowPrivilegedContainer": false,
+				"allowedCapabilities": null,
+				"allowedFlexVolumes": null,
+				"allowedUnsafeSysctls": null,
+				"defaultAddCapabilities": null,
+				"defaultAllowPrivilegeEscalation": null,
+				"fSGroup": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"forbiddenSysctls": null,
+				"groups": null,
+				"metadata": {
+					"creationTimestamp": null,
+					"name": "anyuid",
+					"labels": {
+						"azure.openshift.io/owned-by-sync-pod": "true"
+					}
+				},
+				"priority": 10,
+				"readOnlyRootFilesystem": false,
+				"requiredDropCapabilities": [
+					"MKNOD"
+				],
+				"runAsUser": {
+					"type": "RunAsAny",
+					"uID": null,
+					"uIDRangeMax": null,
+					"uIDRangeMin": null
+				},
+				"seLinuxContext": {
+					"seLinuxOptions": null,
+					"type": "MustRunAs"
+				},
+				"seccompProfiles": null,
+				"supplementalGroups": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"typeMeta": {
+					"apiVersion": "security.openshift.io/v1",
+					"kind": "SecurityContextConstraints"
+				},
+				"users": null,
+				"volumes": [
+					"configMap",
+					"downwardAPI",
+					"emptyDir",
+					"persistentVolumeClaim",
+					"projected",
+					"secret"
+				]
+			}
+			`,
+			response: &admissionv1beta1.AdmissionResponse{
+				UID:     "uid",
+				Allowed: false,
+				Result: &metav1.Status{
+					Status:  metav1.StatusFailure,
+					Message: "Removal of Group system:cluster-admins from SCC is not allowed",
+				},
+			},
+		},
+		{
+			name: "protected SCC, changed allowprivilegedcontainer, forbid",
+			scc: `{
+				"allowHostIPC": false,
+				"allowHostNetwork": false,
+				"allowHostPID": false,
+				"allowHostPorts": false,
+				"allowPrivilegeEscalation": true,
+				"allowPrivilegedContainer": true,
+				"allowedCapabilities": null,
+				"allowedFlexVolumes": null,
+				"allowedUnsafeSysctls": null,
+				"defaultAddCapabilities": null,
+				"defaultAllowPrivilegeEscalation": null,
+				"fSGroup": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"forbiddenSysctls": null,
+				"groups": [
+					"system:cluster-admins"
+				],
+				"metadata": {
+					"creationTimestamp": null,
+					"name": "anyuid",
+					"labels": {
+						"azure.openshift.io/owned-by-sync-pod": "true"
+					}
+				},
+				"priority": 10,
+				"readOnlyRootFilesystem": false,
+				"requiredDropCapabilities": [
+					"MKNOD"
+				],
+				"runAsUser": {
+					"type": "RunAsAny",
+					"uID": null,
+					"uIDRangeMax": null,
+					"uIDRangeMin": null
+				},
+				"seLinuxContext": {
+					"seLinuxOptions": null,
+					"type": "MustRunAs"
+				},
+				"seccompProfiles": null,
+				"supplementalGroups": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"typeMeta": {
+					"apiVersion": "security.openshift.io/v1",
+					"kind": "SecurityContextConstraints"
+				},
+				"users": null,
+				"volumes": [
+					"configMap",
+					"downwardAPI",
+					"emptyDir",
+					"persistentVolumeClaim",
+					"projected",
+					"secret"
+				]
+			}
+			`,
+			response: &admissionv1beta1.AdmissionResponse{
+				UID:     "uid",
+				Allowed: false,
+				Result: &metav1.Status{
+					Status:  metav1.StatusFailure,
+					Message: "Modification of fields other than Users and Groups in the SCC is not allowed",
+				},
+			},
+		},
+		{
+			name: "protected SCC, removed sync label, forbid",
+			scc: `{
+				"allowHostIPC": false,
+				"allowHostNetwork": false,
+				"allowHostPID": false,
+				"allowHostPorts": false,
+				"allowPrivilegeEscalation": true,
+				"allowPrivilegedContainer": false,
+				"allowedCapabilities": null,
+				"allowedFlexVolumes": null,
+				"allowedUnsafeSysctls": null,
+				"defaultAddCapabilities": null,
+				"defaultAllowPrivilegeEscalation": null,
+				"fSGroup": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"forbiddenSysctls": null,
+				"groups": [
+					"system:cluster-admins"
+				],
+				"metadata": {
+					"creationTimestamp": null,
+					"name": "anyuid"
+				},
+				"priority": 10,
+				"readOnlyRootFilesystem": false,
+				"requiredDropCapabilities": [
+					"MKNOD"
+				],
+				"runAsUser": {
+					"type": "RunAsAny",
+					"uID": null,
+					"uIDRangeMax": null,
+					"uIDRangeMin": null
+				},
+				"seLinuxContext": {
+					"seLinuxOptions": null,
+					"type": "MustRunAs"
+				},
+				"seccompProfiles": null,
+				"supplementalGroups": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"typeMeta": {
+					"apiVersion": "security.openshift.io/v1",
+					"kind": "SecurityContextConstraints"
+				},
+				"users": null,
+				"volumes": [
+					"configMap",
+					"downwardAPI",
+					"emptyDir",
+					"persistentVolumeClaim",
+					"projected",
+					"secret"
+				]
+			}
+			`,
+			response: &admissionv1beta1.AdmissionResponse{
+				UID:     "uid",
+				Allowed: false,
+				Result: &metav1.Status{
+					Status:  metav1.StatusFailure,
+					Message: "Protected SCC has to have the \"azure.openshift.io/owned-by-sync-pod\" label set to true",
+				},
+			},
+		},
+		{
+			name: "unprotected SCC, allow",
+			scc: `{
+				"allowHostIPC": false,
+				"allowHostNetwork": false,
+				"allowHostPID": false,
+				"allowHostPorts": false,
+				"allowPrivilegeEscalation": true,
+				"allowPrivilegedContainer": true,
+				"allowedCapabilities": null,
+				"allowedFlexVolumes": null,
+				"allowedUnsafeSysctls": null,
+				"defaultAddCapabilities": null,
+				"defaultAllowPrivilegeEscalation": null,
+				"fSGroup": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"forbiddenSysctls": null,
+				"groups": [
+					"system:cluster-admins"
+				],
+				"metadata": {
+					"creationTimestamp": null,
+					"name": "notprotected"
+				},
+				"priority": 10,
+				"readOnlyRootFilesystem": false,
+				"requiredDropCapabilities": [
+					"MKNOD"
+				],
+				"runAsUser": {
+					"type": "RunAsAny",
+					"uID": null,
+					"uIDRangeMax": null,
+					"uIDRangeMin": null
+				},
+				"seLinuxContext": {
+					"seLinuxOptions": null,
+					"type": "MustRunAs"
+				},
+				"seccompProfiles": null,
+				"supplementalGroups": {
+					"ranges": null,
+					"type": "RunAsAny"
+				},
+				"typeMeta": {
+					"apiVersion": "security.openshift.io/v1",
+					"kind": "SecurityContextConstraints"
+				},
+				"users": null,
+				"volumes": [
+					"configMap",
+					"downwardAPI",
+					"emptyDir",
+					"persistentVolumeClaim",
+					"projected",
+					"secret"
+				]
+			}
+			`,
+			response: &admissionv1beta1.AdmissionResponse{
+				UID:     "uid",
+				Allowed: true,
 				Result: &metav1.Status{
 					Status: metav1.StatusSuccess,
 				},
@@ -584,20 +1024,14 @@ func TestHandleSCCHappyPath(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			var scc bytes.Buffer
-			err := codec.Encode(&test.scc, &scc)
-			if err != nil {
-				t.Fatal(err)
-			}
 			req, err := json.Marshal(&admissionv1beta1.AdmissionReview{
 				Request: &admissionv1beta1.AdmissionRequest{
 					UID:       "uid",
 					Operation: admissionv1beta1.Update,
 					Kind:      metav1.GroupVersionKind{Group: "security.openshift.io", Version: "v1", Kind: "SecurityContextConstraints"},
 					Resource:  metav1.GroupVersionResource{Group: "security.openshift.io", Version: "v1", Resource: "securitycontextconstraints"},
-					Name:      test.scc.ObjectMeta.Name,
 					Object: runtime.RawExtension{
-						Raw: scc.Bytes(),
+						Raw: []byte(test.scc),
 					},
 				}})
 			if err != nil {
@@ -630,7 +1064,8 @@ func TestHandleSCCHappyPath(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(rev.Response, test.response) {
-				t.Errorf("got respose %#v", rev.Response)
+				t.Errorf("got respose %#v, expected %#v", rev.Response, test.response)
+				t.Errorf("status %#v, expected %#v", rev.Response.Result, test.response.Result)
 			}
 		})
 	}

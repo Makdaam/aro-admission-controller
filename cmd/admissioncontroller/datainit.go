@@ -127,6 +127,11 @@ func (ac *admissionController) InitProtectedSCCs() map[string]security.SecurityC
 			SupplementalGroups: security.SupplementalGroupsStrategyOptions{
 				Type: security.SupplementalGroupsStrategyRunAsAny,
 			},
+			Users: []string{
+				"system:serviceaccount:openshift-azure-monitoring:etcd-metrics",
+				"system:serviceaccount:openshift-infra:pv-recycler-controller",
+				"system:serviceaccount:kube-service-catalog:service-catalog-apiserver",
+			},
 		},
 		"hostnetwork": {
 			Priority:                 nil,

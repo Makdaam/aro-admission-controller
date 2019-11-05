@@ -21,13 +21,13 @@ import (
 	"k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 
-	"github.com/davecgh/go-spew/spew"
 	oapps "github.com/openshift/origin/pkg/apps/apis/apps"
 	"github.com/openshift/origin/pkg/security/apis/security"
 	"github.com/openshift/origin/pkg/security/apiserver/securitycontextconstraints"
 
 	//installing decoders for openshift resources
 	_ "github.com/openshift/origin/pkg/api/install"
+	_ "github.com/openshift/origin/pkg/security/apis/security/install"
 )
 
 // verifySCC makes sure that nothing besides additional users or groups are
@@ -103,18 +103,15 @@ func (ac *admissionController) handleSCC(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	//if Operation is Create,Update (Connect not configured in ValidatingWebhookConfiguration)
-	//gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
-	log.Printf("TODO B %#v", string(req.Object.Raw))
-	o, _, err := codec.Decode(req.Object.Raw, nil, nil)
+	gvk := schema.GroupVersionKind{Group: req.Kind.Group, Version: req.Kind.Version, Kind: req.Kind.Kind}
+	o, _, err := codec.Decode(req.Object.Raw, &gvk, nil)
 	if err != nil {
 		log.Printf("Decode error:  %s", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	scc := o.(*security.SecurityContextConstraints)
-	spew.Dump(scc)
 	sccTemplate, protected := ac.protectedSCCs[scc.Name]
-	log.Printf("TODO C %s", scc.ObjectMeta.Name)
 	if protected {
 		//SCC in the set of protected SCCs
 		//only allow additional users and groups
@@ -233,7 +230,6 @@ func (ac *admissionController) handleWhitelist(w http.ResponseWriter, r *http.Re
 		http.Error(w, http.StatusText(errcode), errcode)
 		return
 	}
-	log.Printf("TODO A %s", req.Name)
 	if req.UID == "" || req.Kind.Version == "" || req.Kind.Kind == "" {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
