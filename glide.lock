@@ -1,8 +1,10 @@
-hash: 518926631437144e64f9878546fe806406643ff4c450c392cbc1b42db48f25db
-updated: 2019-10-23T10:58:48.911306684+02:00
+hash: ed9bcdff42cd751e223790a01bfb9d7e9c8d12a80b305decf4bd55b097bbead0
+updated: 2019-11-05T10:03:15.20583915+01:00
 imports:
 - name: github.com/blang/semver
   version: b38d23b8782a487059e8fc8773e9a5b228a77cb6
+- name: github.com/certifi/gocertifi
+  version: deb3ae2ef2610fde3330947281941c562861188b
 - name: github.com/davecgh/go-spew
   version: 8991bc29aa16c548c550c7ff78260e27b9ab7c73
   subpackages:
@@ -13,6 +15,8 @@ imports:
   subpackages:
   - digestset
   - reference
+- name: github.com/getsentry/raven-go
+  version: 32a13797442ccb601b11761d74232773c1402d14
 - name: github.com/ghodss/yaml
   version: 73d445a93680fa1a78ae23a5839bad48f32ba1ee
 - name: github.com/gogo/protobuf
@@ -50,6 +54,8 @@ imports:
   - simplelru
 - name: github.com/imdario/mergo
   version: 6633656539c1639d9d78127b7d47c622b5d7b6dc
+- name: github.com/inconshreveable/mousetrap
+  version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
 - name: github.com/json-iterator/go
   version: f2b4162afba35581b6d4a50d3b8f34e33c144682
 - name: github.com/modern-go/concurrent
@@ -90,13 +96,19 @@ imports:
   - user/v1
 - name: github.com/openshift/client-go
   version: 431ec9a26e5021f35fa41ee9a89842db9bfdb370
+- name: github.com/openshift/library-go
+  version: 0b8367a4679859036c27a30dbe010d76409e7075
+  subpackages:
+  - pkg/serviceability
 - name: github.com/openshift/origin
   version: bd0bee4d76a6d96ec08f09e04b39507d8c05b009
   subpackages:
   - pkg/api
   - pkg/api/apihelpers
+  - pkg/api/install
   - pkg/api/legacy
   - pkg/apps/apis/apps
+  - pkg/apps/apis/apps/install
   - pkg/apps/apis/apps/v1
   - pkg/authorization/apis/authorization
   - pkg/authorization/apis/authorization/install
@@ -104,25 +116,55 @@ imports:
   - pkg/authorization/apis/authorization/rbacconversion
   - pkg/authorization/apis/authorization/v1
   - pkg/build/apis/build
+  - pkg/build/apis/build/install
   - pkg/build/apis/build/internal_helpers
   - pkg/build/apis/build/v1
+  - pkg/cmd/server/apis/config
+  - pkg/cmd/server/apis/config/install
+  - pkg/cmd/server/apis/config/v1
   - pkg/cmd/server/bootstrappolicy
+  - pkg/cmd/util
+  - pkg/cmd/util/pem
   - pkg/image/apis/image
   - pkg/image/apis/image/docker10
+  - pkg/image/apis/image/install
   - pkg/image/apis/image/reference
   - pkg/image/apis/image/v1
+  - pkg/image/apiserver/admission/apis/imagepolicy
+  - pkg/image/apiserver/admission/apis/imagepolicy/install
+  - pkg/image/apiserver/admission/apis/imagepolicy/v1
   - pkg/image/internal/digest
   - pkg/image/internal/reference
   - pkg/network/apis/network
+  - pkg/network/apis/network/install
   - pkg/network/apis/network/v1
+  - pkg/network/apiserver/admission/apis/ingressadmission
+  - pkg/network/apiserver/admission/apis/ingressadmission/install
+  - pkg/network/apiserver/admission/apis/ingressadmission/v1
   - pkg/oauth/apis/oauth
+  - pkg/oauth/apis/oauth/install
   - pkg/oauth/apis/oauth/v1
   - pkg/project/apis/project
+  - pkg/project/apis/project/install
   - pkg/project/apis/project/v1
+  - pkg/project/apiserver/admission/apis/requestlimit
+  - pkg/project/apiserver/admission/apis/requestlimit/install
+  - pkg/project/apiserver/admission/apis/requestlimit/v1
   - pkg/quota/apis/quota
+  - pkg/quota/apis/quota/install
   - pkg/quota/apis/quota/v1
+  - pkg/quota/apiserver/admission/apis/clusterresourceoverride
+  - pkg/quota/apiserver/admission/apis/clusterresourceoverride/install
+  - pkg/quota/apiserver/admission/apis/clusterresourceoverride/v1
+  - pkg/quota/apiserver/admission/apis/runonceduration
+  - pkg/quota/apiserver/admission/apis/runonceduration/install
+  - pkg/quota/apiserver/admission/apis/runonceduration/v1
   - pkg/route/apis/route
+  - pkg/route/apis/route/install
   - pkg/route/apis/route/v1
+  - pkg/scheduler/admission/apis/podnodeconstraints
+  - pkg/scheduler/admission/apis/podnodeconstraints/install
+  - pkg/scheduler/admission/apis/podnodeconstraints/v1
   - pkg/security
   - pkg/security/apis/security
   - pkg/security/apis/security/install
@@ -136,13 +178,29 @@ imports:
   - pkg/security/securitycontextconstraints/user
   - pkg/security/securitycontextconstraints/util
   - pkg/security/uid
+  - pkg/service/admission/apis/externalipranger
+  - pkg/service/admission/apis/externalipranger/install
+  - pkg/service/admission/apis/externalipranger/v1
+  - pkg/service/admission/apis/restrictedendpoints
+  - pkg/service/admission/apis/restrictedendpoints/install
+  - pkg/service/admission/apis/restrictedendpoints/v1
   - pkg/template/apis/template
+  - pkg/template/apis/template/install
   - pkg/template/apis/template/v1
   - pkg/user/apis/user
+  - pkg/user/apis/user/install
   - pkg/user/apis/user/v1
   - pkg/user/apis/user/validation
 - name: github.com/peterbourgon/diskv
   version: 5f041e8faa004a95c88a202771f4cc3e991971e6
+- name: github.com/pkg/errors
+  version: 645ef00459ed84a119197bfb8d8205042c6df63d
+- name: github.com/pkg/profile
+  version: 057bc52a47ec3c79498dda63f4a6f8298725e976
+- name: github.com/sirupsen/logrus
+  version: 89742aefa4b206dcf400792f3bd35b542998eb3b
+- name: github.com/spf13/cobra
+  version: c439c4fa093711d42e1b01acb1235b52004753c1
 - name: github.com/spf13/pflag
   version: 583c0c0531f06d5278b7d917446061adc344b5cd
 - name: golang.org/x/crypto
@@ -200,6 +258,7 @@ imports:
   - core/v1
   - events/v1beta1
   - extensions/v1beta1
+  - imagepolicy/v1alpha1
   - networking/v1
   - policy/v1beta1
   - rbac/v1
@@ -215,6 +274,9 @@ imports:
   version: 832cfda86122b2a2649270d9ca578bb6d9466308
   repo: https://github.com/openshift/kubernetes-apiextensions-apiserver.git
   subpackages:
+  - pkg/apis/apiextensions
+  - pkg/apis/apiextensions/install
+  - pkg/apis/apiextensions/v1beta1
   - pkg/features
 - name: k8s.io/apimachinery
   version: 9e973fa2370e738e9c6ff94b061efa45c2c3bfa1
@@ -270,6 +332,11 @@ imports:
   version: c6aca565d348e53b6bd4cceb0c9fb3a67ccf6b2e
   repo: https://github.com/openshift/kubernetes-apiserver.git
   subpackages:
+  - pkg/apis/apiserver
+  - pkg/apis/apiserver/v1alpha1
+  - pkg/apis/audit
+  - pkg/apis/audit/v1alpha1
+  - pkg/apis/audit/v1beta1
   - pkg/authentication/serviceaccount
   - pkg/authentication/user
   - pkg/authorization/authorizer
@@ -306,6 +373,14 @@ imports:
   - util/homedir
   - util/integer
   - util/retry
+- name: k8s.io/kube-aggregator
+  version: cc081889587926b33190858514775486c407bbe7
+  repo: https://github.com/openshift/kube-aggregator.git
+  subpackages:
+  - pkg/apis/apiregistration
+  - pkg/apis/apiregistration/install
+  - pkg/apis/apiregistration/v1
+  - pkg/apis/apiregistration/v1beta1
 - name: k8s.io/kube-openapi
   version: 8a9b82f00b3a86eac24681da3f9fe6c34c01cea2
   subpackages:
@@ -317,6 +392,9 @@ imports:
   - pkg/api/legacyscheme
   - pkg/api/ref
   - pkg/api/service
+  - pkg/apis/admission
+  - pkg/apis/admission/install
+  - pkg/apis/admission/v1beta1
   - pkg/apis/admissionregistration
   - pkg/apis/admissionregistration/install
   - pkg/apis/admissionregistration/v1alpha1
@@ -362,6 +440,9 @@ imports:
   - pkg/apis/extensions
   - pkg/apis/extensions/install
   - pkg/apis/extensions/v1beta1
+  - pkg/apis/imagepolicy
+  - pkg/apis/imagepolicy/install
+  - pkg/apis/imagepolicy/v1alpha1
   - pkg/apis/networking
   - pkg/apis/networking/install
   - pkg/apis/networking/v1
